@@ -1,0 +1,368 @@
+---
+title: 'Craigs list used car post '
+author: "Guoxin Li"
+output: html_document
+---
+
+
+
+```{r setup}
+library(knitr) # for changing workspace
+library(stringr) # for using some regex functions
+opts_chunk$set(root.dir = 'I:/R Data/141')
+options(width = 110) 
+load("vehicles.rda")
+vehicle = vposts     # make a copy of the orignial data
+body = vehicle$body
+model_google = read.csv("model-google.csv")
+```
+
+
+```{r function}
+value = function(regex,data)
+{
+  regex_fun = regex
+  
+  # It will store all the matched values in the posts return as a list
+  result_fun= str_extract_all(data, ignore.case(regex_fun))
+  
+  # If there are multiple values in the list, get the first one out, if there is no value, give it NA
+  value_fun = sapply(result_fun,function(x) {               
+       if (length(x)>0) x[1]
+       else NA
+       })
+  
+  # how many posts contain the pattern 
+  number = as.numeric(table(is.na(value_fun))[1])   
+  
+  # the posts that don't have that pattern 
+  check = data[is.na(value_fun)]                             
+  return(list(value_fun,number,check))                     
+  
+}
+```
+
+
+**Extract the price being asked for the vehicle from the body column, if it is present, and check if it agrees with the actual price in the price column.**
+
+```{r}
+# regular expression for price
+price = "\\$?(\\d{0,3}[,.]?)*\\d{1,3}"           
+price_value = value(price,body)                            
+
+# how many posts have price in body
+price_value[2]
+
+# remove "$", "," or "." and then transform to numeric
+price_value = as.numeric(gsub("\\$|,|.", "", price_value[[1]]))
+
+# compare the price from "body" and from price column
+table(price_value == vposts$price)                                
+```
+
+**Extract a Vehicle Identication Number (VIN) from the body, if it is present. We could use this to  both identify details of the car (year it was built, type and model of the car, safety features, body style, engine type, etc.) and also use it to get historical information about the particular car. Add the VIN, if available,to the data frame. How many postings include the VIN?**
+
+```{r}
+# regular expression for vin number
+vin = "VIN[ :-]? ?\\d*\\w{1,7}\\d{1,3}\\w{1,5}\\d{4,8}"           
+vin_num = value(vin,body)  
+
+# how many posts have price in body
+vin_num[2]
+```
+
+```{r}
+# rough way to get the vin number
+vin = "[A-HJ-NPR-Z0-9]{17}"                                     
+vin_num1 = value(vin,body)  
+
+# how many posts have price in body
+vin_num1[2]
+
+# look it the value 
+ VIN = data.frame(vin_num1[[1]])
+#View(VIN)
+ vposts$vin = vin_num[[1]]
+```
+
+**Extract phone numbers from the body column, and again add these as a new column. How many posts include a phone number?**
+
+```{r}
+# regular expression for vin number
+phone = "\\(?\\d{3}\\)?[ ]?[ -]?\\d{3}-? ?\\d{4}"               
+phone_num = value(phone,body) 
+
+# how many posts have price in body
+phone_num[2]
+
+```
+
+**Extract email addresses from the body column, and again add these as a new column. How many posts include an email address?**
+
+```{r}
+# regular expression for vin number
+email = "[[:alnum:]|[:punct:]]+@[[:alnum:]|[:punct:]]+?\\.(com|net|org|edu|gov){1}"     
+email_add = value(email,body)
+
+# how many posts have price in body
+email_add[2]
+
+# grep the posts have "email"
+email = body[grepl("email", body, ignore.case = TRUE)]  
+
+# how many posrs have email
+length(email)
+
+# look at some posts have "email"
+email[1:3]
+```
+
+**Find the year in the description or body and compare it with the value in the year column.**
+
+```{r}
+# regular expression for year
+year = " ?(19|20)\\d{2} ?"       
+year_b = value(year,body)
+
+# how many posrs have year
+year_b[2]
+
+# compare to the year column
+year_num = as.numeric(year_b[[1]])
+table(year_num == vposts$year) 
+```
+
+**Determine the model of the car, e.g., S60, Boxter, Cayman, 911, Jetta. This includes correcting mis-spelled or abbreviated model names. You may find the agrep() function useful. You should also use statistics, i.e., counts to see how often a word occurs in other posts and if such a spelling is reasonable, and whether this model name has been seen with that maker often. When doing these questions, you will very likely have to iterate by developing a regular expression, and seeing what results it gives you and adapting it. Furthermore, you will probably have to use two or more strategies when looing for a particular piece of information. This is expected; the data are not nice and regularly formatted.**
+
+```{r}
+
+# get the model from the "title" column
+#title = "\\d{2,4} ([A-z]+[:punct:]?[A-z]+) ([A-z0-9]+)" 
+#new_title  = value(title,vposts$title) 
+#model = gsub(".*\\d{2,4} ([A-z]+) ([A-z0-9]+).*" , "\\2", new_title[[1]])
+#model = casefold(model, upper = F)
+
+# save it as csv (won't do it again, since I already saved it)
+#vposts$model = model
+#write.csv(vposts[,c(1,28)], file = "model.csv")
+
+# read the sort data from google refine
+#model_google = read.csv("model-google.csv")
+
+# redefine model column
+vposts$model = model_google[,3]
+
+```
+
+**Pick two models of cars, each for a different car maker, e.g., Toyota or Volvo. For each of these, separately explore the relationship between the price being asked for the vehicle, the number of miles (odometer), age of the car and condition. Does location (city) have an effect on this? Use a statistical model to be able to suggest the appropriate price for such a car given its age, mileage, and condition. You might consider a linear model, k-nearest neighbors, or a regression tree. You need to describe why the method you chose is appropriate? what assumptions are needed and how reasonable they are? and how well if performs and how you determined this? Would you use it if you were buying or selling this type of car?**
+
+```{r}
+
+# add age columns to the data
+vposts$age = 2015- vposts$year
+
+# Print out conditions so we can cut and paste them into smaller
+conditions = levels(vposts$condition)
+conditions = sprintf('"%s",\n', conditions)
+cat(conditions)
+
+# Define new categories. (code from homework1 solution for question 16)
+new_cats = list(
+  excellent = c("excellent"),
+  good = c("good", "very good"),
+  "like new" = c("like new", "mint", "new", "pre owned", "pre-owned", "preowned", "preownes"),
+  used = c("0used", "used"),
+  fair = c("fair", "nice", "nice teuck"),
+  salvage = c("complete parts car, blown engine", "front side damage", "hit and run :( gently", 
+              "muscle car restore", "needs bodywork", "needs restoration!", "needs restored",
+              "needs total restore", "needs work", "needs work/for parts", "nice rolling restoration",
+              "not running", "parts", "project", "project car", "rebuildable project", "restoration",
+              "restoration project", "restore", "restored", "salvage", "rough but runs"),
+  other = c("207,400", "ac/heater", "carfax guarantee!!", "certified", "honnda", "superb original" )
+)
+
+# Convert conditions to new categories.
+vposts$new_cond = vposts$condition
+levels(vposts$new_cond) = c(levels(vposts$new_cond), "other")
+
+for (i in seq_along(new_cats)) {
+  new_cat = names(new_cats)[[i]]
+  vposts$new_cond[vposts$new_cond %in% new_cats[[i]]] = new_cat
+}
+
+vposts$new_cond = factor(vposts$new_cond)
+```
+
+```{r}
+sort(table(vposts$model), decreasing = TRUE)[1:5]
+```
+
+```{r}
+
+# get the  camry posts 
+camry = vposts[vposts$model == "camry",]
+camry = camry[!is.na(camry$model),]
+
+# take out the NAs
+remove_na = function(data)
+{
+  data = data[!is.na(data$odometer),]
+  data = data[!is.na(data$price),]
+  data = data[!is.na(data$new_cond),]
+}
+
+camry = remove_na(camry)
+
+# plot the price with odometer, age and condition separately
+plot_relation = function(data)
+{
+plot(data$odometer, data$price, ylab= "Price (US dollar) ", xlab = "Odometer (mile)", main = "Relation between Price and Odometer")
+plot(data$age, data$price, ylab = "Price (US dollar) ", xlab = "Age (year)", main = "Relation between Price and Age")
+plot(factor(data$new_cond), data$price, ylab= "Price (US dollar) ", xlab = "Condition", main = "Relation between Price and Condition")
+}
+
+par(mfrow=c(2,2))
+plot_relation(camry)
+```
+
+
+```{r}
+# take out the outliers
+# see the 50 largest odometer
+tail( sort(camry$odometer), 50 )
+
+# I take odometer that no more than 30,000 and zero value
+camry = camry[camry$odometer<300000 & camry$odometer != 0,]
+
+#log trasformation
+log_plot = function(data)
+{
+  plot(data$odometer, log(data$price), ylab= "Price (log(US dollar)) ", xlab = "Odometer (mile)", main = "Relation between log(Price) and Odometer")
+  plot(data$age, log(data$price), ylab= "Price (log(US dollar)) ", xlab = "Age (year)", main = "Relation between log(Price) and Age")
+}
+par(mfrow=c(2,1))
+log_plot(camry)
+```
+
+
+```{r}
+# split price by city
+pri_by_city = split(camry$price, camry$city)
+
+# draw boxplot
+par(mfrow=c(1,1))
+boxplot(pri_by_city, col = "salmon")
+title(" Camry Price Distribution by City", ylab = "Dollars" , xlab = "Cities")
+```
+
+
+```{r}
+# fit a regression model
+fit_model = lm(log(price)~odometer+age+factor(new_cond), data = camry)
+
+# diagnostics for model
+par(mfrow=c(2,2))
+plot(fit_model)
+```
+
+
+```{r}
+summary(fit_model)
+anova(fit_model)
+```
+
+```{r}
+# use cross validation to test the model
+test_model = function(data)
+{
+  # split train and test data set
+  index = sample(1:nrow(data), nrow(data)/5)
+  train = data[-index,]
+  test = data[index,]
+  
+  # fit the model
+  fit_model = lm(log(price)~odometer+age+factor(new_cond), data = train)
+  
+  # format test data for prediction
+  testdata = data.frame(with(test,cbind(odometer, age)))
+  testdata$new_cond = test$new_cond
+  
+  # get the predict price
+  pred_price = exp(predict(fit_model, testdata, type="response") )
+  
+  # plot the true and predict price
+  plot(pred_price, type = "l", ylab = "Price (log(US dollar)) ", xlab = "Index", main = "True value versus predict value")
+  points(test$price, col = "red", type = "l")
+  legend("topleft", legend = c("True price", "Predict price"), col= c("black", "red"), pch=1, cex = 0.6)
+  
+}
+
+# do it twice
+par(mfrow=c(1,2))
+test_model(camry)
+test_model(camry)
+
+```
+
+
+```{r}
+# get the  camry posts 
+civic= vposts[vposts$model == "civic",]
+
+# take out the NAs
+civic = remove_na(civic)
+
+# plot the price with odometer, age and condition separately
+par(mfrow=c(2,2))
+plot_relation(civic)
+```
+
+```{r}
+# take out the outliers
+# I take odometer that no more than 50,000
+civic = civic[civic$odometer<500000 | civic$odometer == 0,]
+
+#log trasformation
+par(mfrow=c(1,2))
+log_plot(civic)
+```
+
+```{r}
+# split price by city
+pri_by_city = split(civic$price, civic$city)
+
+# draw boxplot
+par(mfrow=c(1,1))
+boxplot(pri_by_city, col = "salmon")
+title(" Civic Price Distribution by City", ylab = "Dollars" , xlab = "Cities")
+```
+
+```{r}
+# fit a regression model
+fit_model = lm(log(price)~odometer+age+factor(new_cond), data = civic)
+
+# diagnostics for model
+par(mfrow=c(2,2))
+plot(fit_model)
+```
+
+
+```{r}
+# remove outlier
+civic = civic[!rownames(civic) == "posted18193",]
+
+# fit regression model agian
+fit_model = lm(log(price)~odometer+age+factor(new_cond), data = civic)
+
+summary(fit_model)
+anova(fit_model)
+```
+
+
+```{r}
+# use cross validation to test the model do it twice
+par(mfrow=c(1,2))
+test_model(civic)
+test_model(civic)
+
+```
